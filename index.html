@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crew/Log — Third-party worker logging</title>
+<meta name="theme-color" content="#14171C">
+<meta name="description" content="Log and track third-party workers across shifts, production areas and contractor sections.">
+<!-- Crew Log — third-party worker shift logging, mobile-first -->
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14171C; --surface:#1E232B; --surface2:#252C36; --line:#333C49;
+    --text:#F2F4F7; --muted:#98A3B3;
+    --hivis:#FFC427; --hivis-ink:#171308;
+    --earlies:#FFC427; --evenings:#FF8A50; --nights:#7D9BFF;
+    --packing:#4FD1A5; --postfiller:#C792EA;
+    --danger:#FF6B6B;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Barlow',system-ui,sans-serif; font-size:16px;
+    min-height:100vh; padding-bottom:88px;
+  }
+  h1,h2,h3,.disp{font-family:'Barlow Condensed',sans-serif; letter-spacing:.04em; text-transform:uppercase}
+
+  /* ---------- header ---------- */
+  header{
+    position:sticky; top:0; z-index:20;
+    background:linear-gradient(180deg,#171B21 0%,#14171C 100%);
+    border-bottom:2px solid var(--hivis);
+    padding:14px 16px 10px;
+  }
+  header .brand{display:flex; align-items:baseline; gap:10px}
+  header h1{margin:0; font-size:26px; font-weight:700}
+  header h1 .tick{color:var(--hivis)}
+  header .sub{color:var(--muted); font-size:13px}
+  .week-note{color:var(--muted); font-size:12.5px; margin-top:4px}
+
+  main{padding:16px; max-width:640px; margin:0 auto}
+
+  .view{display:none}
+  .view.active{display:block}
+
+  /* ---------- cards & labels ---------- */
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:14px}
+  .field-label{
+    display:flex; align-items:center; gap:8px;
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.08em;
+    font-size:15px; font-weight:600; color:var(--muted); margin:0 0 8px;
+  }
+  .field-label .dot{width:9px; height:9px; border-radius:2px; background:var(--hivis); flex:none}
+
+  input[type=text], input[type=date], textarea, select{
+    width:100%; background:var(--surface2); color:var(--text);
+    border:1.5px solid var(--line); border-radius:12px;
+    padding:14px; font-size:17px; font-family:inherit;
+    min-height:54px;
+  }
+  input:focus, textarea:focus, select:focus, button:focus-visible{
+    outline:3px solid var(--hivis); outline-offset:1px; border-color:var(--hivis);
+  }
+  textarea{min-height:72px; resize:vertical}
+  input[type=date]{color-scheme:dark}
+
+  /* ---------- big segmented choices ---------- */
+  .seg{display:grid; gap:10px}
+  .seg.cols2{grid-template-columns:1fr 1fr}
+  .seg.cols3{grid-template-columns:1fr 1fr 1fr}
+  .seg button{
+    min-height:64px; border-radius:12px; border:1.5px solid var(--line);
+    background:var(--surface2); color:var(--text); cursor:pointer;
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.05em;
+    font-size:18px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    transition:transform .05s ease;
+  }
+  .seg button:active{transform:scale(.97)}
+  .seg button small{
+    font-family:'Barlow'; text-transform:none; letter-spacing:0;
+    font-size:12.5px; font-weight:400; color:var(--muted);
+  }
+  .seg button.sel{border-width:2.5px}
+  .seg button[data-shift=earlies].sel{border-color:var(--earlies); background:rgba(255,196,39,.12)}
+  .seg button[data-shift=evenings].sel{border-color:var(--evenings); background:rgba(255,138,80,.12)}
+  .seg button[data-shift=nights].sel{border-color:var(--nights); background:rgba(125,155,255,.12)}
+  .seg button[data-area=Packing].sel{border-color:var(--packing); background:rgba(79,209,165,.10)}
+  .seg button[data-area="Post-filler"].sel{border-color:var(--postfiller); background:rgba(199,146,234,.10)}
+  .seg button[data-duty].sel{border-color:var(--hivis); background:rgba(255,196,39,.10)}
+  .seg button.sel small{color:var(--text)}
+
+  .hint{font-size:13.5px; color:var(--muted); margin-top:8px; line-height:1.45}
+  .hint.warn{color:var(--hivis)}
+
+  .btn-primary{
+    width:100%; min-height:62px; border:none; border-radius:14px;
+    background:var(--hivis); color:var(--hivis-ink); cursor:pointer;
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.08em;
+    font-size:21px; font-weight:700; margin-top:4px;
+  }
+  .btn-primary:active{transform:scale(.985)}
+  .btn-primary:disabled{opacity:.5}
+
+  .toast{
+    position:fixed; left:50%; bottom:104px; transform:translateX(-50%);
+    background:var(--hivis); color:var(--hivis-ink); font-weight:600;
+    padding:12px 20px; border-radius:999px; font-size:15px;
+    box-shadow:0 6px 24px rgba(0,0,0,.5); opacity:0; pointer-events:none;
+    transition:opacity .25s ease; z-index:50; white-space:nowrap;
+  }
+  .toast.show{opacity:1}
+
+  /* ---------- shift & area chips ---------- */
+  .chip{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:12.5px; font-weight:600; padding:3px 10px; border-radius:999px;
+    border:1px solid var(--line); color:var(--text);
+  }
+  .chip::before{content:''; width:8px; height:8px; border-radius:50%; background:var(--muted)}
+  .chip.earlies::before{background:var(--earlies)}
+  .chip.evenings::before{background:var(--evenings)}
+  .chip.nights::before{background:var(--nights)}
+  .chip.Packing::before{background:var(--packing)}
+  .chip.Post-filler::before{background:var(--postfiller)}
+  .chip.section::before{background:var(--nights)}
+  .chip.contractor::before{background:var(--evenings)}
+
+  /* ---------- board ---------- */
+  .board-controls{display:grid; grid-template-columns:1fr; gap:12px; margin-bottom:14px}
+  .slot{
+    border:1px solid var(--line); border-radius:12px; background:var(--surface2);
+    padding:12px 14px; margin-bottom:10px;
+  }
+  .slot-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px}
+  .slot-head h3{margin:0; font-size:19px; font-weight:600}
+  .fill{
+    font-family:'Barlow Condensed'; font-size:16px; font-weight:700; letter-spacing:.05em;
+    padding:2px 10px; border-radius:8px; border:1.5px solid var(--line); color:var(--muted);
+  }
+  .fill.ok{border-color:var(--packing); color:var(--packing)}
+  .fill.short{border-color:var(--hivis); color:var(--hivis)}
+  .fill.over{border-color:var(--evenings); color:var(--evenings)}
+  .slot .names{display:flex; flex-direction:column; gap:6px}
+  .slot .names .worker{
+    display:flex; justify-content:space-between; gap:8px; align-items:baseline;
+    background:var(--surface); border-radius:8px; padding:8px 12px; font-size:16px;
+  }
+  .worker .agency{color:var(--muted); font-size:13px}
+  .slot .empty{color:var(--muted); font-size:14px; font-style:italic; padding:4px 2px}
+  .area-title{
+    display:flex; align-items:center; gap:8px; margin:18px 0 10px;
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.08em;
+    font-size:17px; font-weight:700;
+  }
+  .area-title .bar{width:14px; height:14px; border-radius:3px}
+  .area-title.packing .bar{background:var(--packing)}
+  .area-title.postfiller .bar{background:var(--postfiller)}
+  .area-title.contractors .bar{background:var(--evenings)}
+  .board-banner{
+    border:1.5px dashed var(--line); border-radius:12px; padding:10px 14px;
+    color:var(--muted); font-size:13.5px; margin-bottom:12px; line-height:1.45;
+  }
+  .board-banner strong{color:var(--hivis)}
+
+  /* ---------- records ---------- */
+  .filters{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px}
+  .rec-day{margin-bottom:18px}
+  .rec-day h3{margin:0 0 8px; font-size:18px; color:var(--muted); font-weight:600}
+  .rec{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; margin-bottom:8px;
+  }
+  .rec-top{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+  .rec-name{font-size:17px; font-weight:600}
+  .rec-agency{color:var(--muted); font-size:13.5px}
+  .rec-chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+  .rec-duty{
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.05em;
+    font-size:14px; font-weight:700; color:var(--hivis);
+  }
+  .rec-notes{color:var(--muted); font-size:13.5px; margin-top:6px}
+  .rec-del{
+    background:none; border:none; color:var(--danger); cursor:pointer;
+    font-size:13px; padding:6px 0 0; font-family:inherit;
+  }
+  .empty-state{
+    text-align:center; color:var(--muted); padding:40px 20px; line-height:1.6;
+  }
+  .empty-state .big{font-size:40px}
+  .count-line{color:var(--muted); font-size:13px; margin-bottom:10px}
+  .btn-ghost{
+    width:100%; min-height:50px; border-radius:12px; cursor:pointer;
+    background:none; border:1.5px solid var(--line); color:var(--text);
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.06em;
+    font-size:16px; font-weight:600; margin-top:6px;
+  }
+
+  /* ---------- bottom nav ---------- */
+  nav{
+    position:fixed; bottom:0; left:0; right:0; z-index:30;
+    background:#171B21; border-top:1px solid var(--line);
+    display:grid; grid-template-columns:1fr 1fr 1fr 1fr;
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+  }
+  nav button{
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    min-height:60px; border-radius:12px;
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.07em;
+    font-size:15px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  }
+  nav button svg{width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:1.8}
+  nav button.active{color:var(--hivis); background:rgba(255,196,39,.08)}
+
+  /* ---------- analyse ---------- */
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px}
+  .stat{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:14px; text-align:center;
+  }
+  .stat .num{
+    font-family:'Barlow Condensed'; font-size:34px; font-weight:700; color:var(--hivis);
+    line-height:1;
+  }
+  .stat .lbl{color:var(--muted); font-size:12.5px; margin-top:6px; text-transform:uppercase; letter-spacing:.06em}
+  .usage-row{margin-bottom:14px}
+  .usage-top{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:5px}
+  .usage-name{font-size:16px; font-weight:600}
+  .usage-meta{color:var(--muted); font-size:13px; white-space:nowrap}
+  .usage-track{height:16px; background:var(--surface2); border:1px solid var(--line); border-radius:999px; overflow:hidden}
+  .usage-fill{height:100%; border-radius:999px; background:var(--hivis); min-width:4px}
+  .usage-fill.alt1{background:var(--packing)}
+  .usage-fill.alt2{background:var(--postfiller)}
+  .usage-fill.alt3{background:var(--nights)}
+  .usage-fill.alt4{background:var(--evenings)}
+  .analyse-title{
+    font-family:'Barlow Condensed'; text-transform:uppercase; letter-spacing:.08em;
+    font-size:17px; font-weight:700; margin:0 0 12px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .analyse-title .dot{width:9px; height:9px; border-radius:2px; background:var(--hivis)}
+
+  @media (min-width:520px){
+    .board-controls{grid-template-columns:1fr 1fr}
+    .stat-grid{grid-template-columns:repeat(4,1fr)}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none !important}
+  }
+</style>
+
+<header>
+  <div class="brand">
+    <h1>Crew<span class="tick">/</span>Log</h1>
+    <span class="sub">Third-party workers</span>
+  </div>
+  <div class="week-note">Roster week: Monday 06:00 → Saturday 03:00 · Saturday earlies optional</div>
+</header>
+
+<main>
+  <!-- ============ LOG VIEW ============ -->
+  <section id="view-log" class="view active">
+    <div class="card">
+      <p class="field-label"><span class="dot"></span>Worker</p>
+      <input type="text" id="f-name" placeholder="Full name" autocomplete="off">
+      <div style="height:10px"></div>
+      <input type="text" id="f-agency" placeholder="Agency / company (optional)" autocomplete="off">
+    </div>
+
+    <div class="card">
+      <p class="field-label"><span class="dot"></span>Date</p>
+      <input type="date" id="f-date">
+      <p class="hint" id="date-hint"></p>
+    </div>
+
+    <div class="card">
+      <p class="field-label"><span class="dot"></span>Shift</p>
+      <div class="seg cols3" id="seg-shift">
+        <button data-shift="earlies">Earlies<small>06:00–14:00</small></button>
+        <button data-shift="evenings">Evenings<small>14:00–22:00</small></button>
+        <button data-shift="nights">Nights<small>22:00–06:00</small></button>
+      </div>
+      <p class="hint" id="shift-hint">Friday nights finish Saturday 03:00.</p>
+    </div>
+
+    <div class="card">
+      <p class="field-label"><span class="dot"></span>Worker type</p>
+      <div class="seg cols2" id="seg-type">
+        <button data-type="production" class="sel">Production crew<small>Packing &amp; post-filler</small></button>
+        <button data-type="contractor">Contractor<small>Maintenance, trades, IT…</small></button>
+      </div>
+    </div>
+
+    <div class="card" id="card-area">
+      <p class="field-label"><span class="dot"></span>Area</p>
+      <div class="seg cols2" id="seg-area">
+        <button data-area="Packing">Packing</button>
+        <button data-area="Post-filler">Post-filler</button>
+      </div>
+    </div>
+
+    <div class="card" id="card-duty">
+      <p class="field-label"><span class="dot"></span>Duty</p>
+      <div class="seg cols2" id="seg-duty">
+        <button data-duty="Forklift">Forklift<small>usually 1</small></button>
+        <button data-duty="Line 1">Line 1<small>usually 1</small></button>
+        <button data-duty="Line 2">Line 2<small>usually 2</small></button>
+        <button data-duty="Line 3">Line 3<small>usually 3</small></button>
+      </div>
+    </div>
+
+    <div class="card" id="card-section" style="display:none">
+      <p class="field-label"><span class="dot"></span>Section</p>
+      <div class="seg cols2" id="seg-section">
+        <button data-section="Maintenance">Maintenance</button>
+        <button data-section="Electrical">Electrical</button>
+        <button data-section="Mechanical">Mechanical</button>
+        <button data-section="Steel fabrication">Steel fabrication</button>
+        <button data-section="Process engineering">Process eng.</button>
+        <button data-section="Tech / IT support">Tech / IT</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="field-label"><span class="dot"></span>Notes (optional)</p>
+      <textarea id="f-notes" placeholder="Anything worth flagging — late start, induction done, PPE issued…"></textarea>
+    </div>
+
+    <button class="btn-primary" id="btn-save">Log worker</button>
+    <p class="hint" style="text-align:center">Records save to a shared database — every device using this app sees the same log.</p>
+  </section>
+
+  <!-- ============ BOARD VIEW ============ -->
+  <section id="view-board" class="view">
+    <div class="card">
+      <div class="board-controls">
+        <div>
+          <p class="field-label"><span class="dot"></span>Date</p>
+          <input type="date" id="b-date">
+        </div>
+        <div>
+          <p class="field-label"><span class="dot"></span>Shift</p>
+          <div class="seg cols3" id="b-seg-shift">
+            <button data-shift="earlies">Earlies</button>
+            <button data-shift="evenings">Evenings</button>
+            <button data-shift="nights">Nights</button>
+          </div>
+        </div>
+      </div>
+      <div class="board-banner" id="board-banner"></div>
+      <div id="board-body"></div>
+    </div>
+  </section>
+
+  <!-- ============ RECORDS VIEW ============ -->
+  <section id="view-records" class="view">
+    <div class="filters">
+      <select id="r-shift">
+        <option value="">All shifts</option>
+        <option value="earlies">Earlies</option>
+        <option value="evenings">Evenings</option>
+        <option value="nights">Nights</option>
+      </select>
+      <select id="r-area">
+        <option value="">All areas &amp; sections</option>
+        <optgroup label="Production">
+          <option value="Packing">Packing</option>
+          <option value="Post-filler">Post-filler</option>
+        </optgroup>
+        <optgroup label="Contractor sections">
+          <option value="Maintenance">Maintenance</option>
+          <option value="Electrical">Electrical</option>
+          <option value="Mechanical">Mechanical</option>
+          <option value="Steel fabrication">Steel fabrication</option>
+          <option value="Process engineering">Process engineering</option>
+          <option value="Tech / IT support">Tech / IT support</option>
+        </optgroup>
+      </select>
+    </div>
+    <p class="count-line" id="r-count"></p>
+    <div id="records-body"></div>
+    <button class="btn-ghost" id="btn-export">Download CSV</button>
+  </section>
+
+  <!-- ============ ANALYSE VIEW ============ -->
+  <section id="view-analyse" class="view">
+    <div class="filters">
+      <div>
+        <p class="field-label"><span class="dot"></span>From</p>
+        <input type="date" id="a-from">
+      </div>
+      <div>
+        <p class="field-label"><span class="dot"></span>To</p>
+        <input type="date" id="a-to">
+      </div>
+    </div>
+
+    <div class="stat-grid" id="a-stats"></div>
+
+    <div class="card">
+      <p class="analyse-title"><span class="dot"></span>Hours by company</p>
+      <div id="a-company"></div>
+    </div>
+
+    <div class="card">
+      <p class="analyse-title"><span class="dot"></span>Hours by area / section</p>
+      <div id="a-area"></div>
+    </div>
+
+    <div class="card">
+      <p class="analyse-title"><span class="dot"></span>Hours by duty</p>
+      <div id="a-duty"></div>
+    </div>
+
+    <p class="hint" style="text-align:center">
+      Hours assume full shifts: earlies and evenings 8 h, nights 8 h — except Friday nights,
+      counted as 5 h (22:00–03:00 Saturday).
+    </p>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<nav>
+  <button id="nav-log" class="active">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+    Log worker
+  </button>
+  <button id="nav-board">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg>
+    Shift board
+  </button>
+  <button id="nav-records">
+    <svg viewBox="0 0 24 24"><path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6"/></svg>
+    Records
+  </button>
+  <button id="nav-analyse">
+    <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2" stroke-linecap="round"/></svg>
+    Analyse
+  </button>
+</nav>
+
+<script>
+(function(){
+  'use strict';
+
+  var records = [];
+  var memoryOnly = false;
+
+  var SHIFT_LABEL = {earlies:'Earlies', evenings:'Evenings', nights:'Nights'};
+  var SHIFT_TIME  = {earlies:'06:00–14:00', evenings:'14:00–22:00', nights:'22:00–06:00'};
+  var DUTIES = [
+    {name:'Forklift', expected:1},
+    {name:'Line 1',   expected:1},
+    {name:'Line 2',   expected:2},
+    {name:'Line 3',   expected:3}
+  ];
+  var AREAS = ['Packing','Post-filler'];
+  var SECTIONS = ['Maintenance','Electrical','Mechanical','Steel fabrication','Process engineering','Tech / IT support'];
+  function recType(r){ return r.type || 'production'; } // older records predate the type field
+
+  /* ---------- helpers ---------- */
+  function $(id){ return document.getElementById(id); }
+  function todayISO(){
+    var d = new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function dayOfWeek(iso){ // 0=Sun … 6=Sat
+    var p = iso.split('-');
+    return new Date(+p[0], +p[1]-1, +p[2]).getDay();
+  }
+  function fmtDate(iso){
+    var p = iso.split('-');
+    var d = new Date(+p[0], +p[1]-1, +p[2]);
+    return d.toLocaleDateString(undefined,{weekday:'short', day:'numeric', month:'short', year:'numeric'});
+  }
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(msg){
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._h);
+    t._h = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  /* ---------- storage (Vercel serverless API + KV) ---------- */
+  async function loadRecords(){
+    try{
+      var res = await fetch('/api/records');
+      if (!res.ok) throw new Error('bad status');
+      var data = await res.json();
+      records = data.records || [];
+      memoryOnly = false;
+    }catch(e){
+      records = [];
+      memoryOnly = true;
+    }
+  }
+  async function saveRecords(){
+    if (memoryOnly) return true;
+    try{
+      var res = await fetch('/api/records', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({records: records})
+      });
+      return res.ok;
+    }catch(e){ return false; }
+  }
+
+  /* ---------- segmented control wiring ---------- */
+  function wireSeg(containerId, attr, onChange){
+    var box = $(containerId);
+    box.addEventListener('click', function(ev){
+      var btn = ev.target.closest('button'); if(!btn) return;
+      box.querySelectorAll('button').forEach(function(b){ b.classList.remove('sel'); });
+      btn.classList.add('sel');
+      if (onChange) onChange(btn.getAttribute(attr));
+    });
+  }
+  function segValue(containerId, attr){
+    var sel = $(containerId).querySelector('button.sel');
+    return sel ? sel.getAttribute(attr) : '';
+  }
+  function segSet(containerId, attr, value){
+    $(containerId).querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('sel', b.getAttribute(attr) === value);
+    });
+  }
+
+  /* ---------- log form ---------- */
+  function updateDateHint(){
+    var iso = $('f-date').value; if(!iso){ $('date-hint').textContent=''; return; }
+    var dow = dayOfWeek(iso);
+    var h = $('date-hint');
+    if (dow === 6){
+      h.textContent = 'Saturday — optional earlies shift only on the normal roster.';
+      h.className = 'hint warn';
+    } else if (dow === 0){
+      h.textContent = 'Sunday — outside the normal Monday–Saturday roster. You can still log it if needed.';
+      h.className = 'hint warn';
+    } else {
+      h.textContent = '';
+      h.className = 'hint';
+    }
+  }
+
+  async function saveEntry(){
+    var name = $('f-name').value.trim();
+    var date = $('f-date').value;
+    var shift = segValue('seg-shift','data-shift');
+    var type = segValue('seg-type','data-type') || 'production';
+    var area = segValue('seg-area','data-area');
+    var duty = segValue('seg-duty','data-duty');
+    var section = segValue('seg-section','data-section');
+    if (!name){ toast('Add the worker\u2019s name'); $('f-name').focus(); return; }
+    if (!date){ toast('Pick a date'); return; }
+    if (!shift){ toast('Pick a shift'); return; }
+    if (type === 'production'){
+      if (!area){ toast('Pick an area'); return; }
+      if (!duty){ toast('Pick a duty'); return; }
+    } else {
+      if (!section){ toast('Pick a section'); return; }
+    }
+
+    var rec = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      name: name,
+      agency: $('f-agency').value.trim(),
+      date: date, shift: shift, type: type,
+      area: type === 'production' ? area : '',
+      duty: type === 'production' ? duty : '',
+      section: type === 'contractor' ? section : '',
+      notes: $('f-notes').value.trim(),
+      loggedAt: new Date().toISOString()
+    };
+    records.push(rec);
+    var ok = await saveRecords();
+    if (!ok && !memoryOnly){ records.pop(); toast('Couldn\u2019t save — try again'); return; }
+
+    toast(name + ' logged \u2713');
+    $('f-name').value=''; $('f-notes').value='';
+    $('f-name').focus();
+  }
+
+  /* ---------- board ---------- */
+  function renderBoard(){
+    var date = $('b-date').value;
+    var shift = segValue('b-seg-shift','data-shift');
+    var banner = $('board-banner');
+    var body = $('board-body');
+    if (!date || !shift){
+      banner.innerHTML = 'Pick a date and shift to see who\u2019s on.';
+      body.innerHTML = '';
+      return;
+    }
+    var dow = dayOfWeek(date);
+    var head = '<strong>' + SHIFT_LABEL[shift] + '</strong> \u00b7 ' + SHIFT_TIME[shift] + ' \u00b7 ' + fmtDate(date);
+    if (dow === 6 && shift === 'earlies') head += ' \u00b7 optional Saturday shift';
+    if (dow === 5 && shift === 'nights') head += ' \u00b7 finishes Saturday 03:00';
+    if (dow === 6 && shift !== 'earlies') head += ' \u00b7 <strong>not on the normal Saturday roster</strong>';
+    banner.innerHTML = head;
+
+    var onShift = records.filter(function(r){ return r.date === date && r.shift === shift; });
+    var production = onShift.filter(function(r){ return recType(r) === 'production'; });
+    var contractors = onShift.filter(function(r){ return recType(r) === 'contractor'; });
+    var html = '';
+    AREAS.forEach(function(area){
+      var cls = area === 'Packing' ? 'packing' : 'postfiller';
+      html += '<div class="area-title '+cls+'"><span class="bar"></span>'+esc(area)+'</div>';
+      DUTIES.forEach(function(d){
+        var here = production.filter(function(r){ return r.area===area && r.duty===d.name; });
+        var n = here.length, exp = d.expected;
+        var fillCls = n===0 ? '' : (n<exp ? 'short' : (n===exp ? 'ok' : 'over'));
+        html += '<div class="slot"><div class="slot-head"><h3>'+esc(d.name)+'</h3>' +
+                '<span class="fill '+fillCls+'">'+n+' of '+exp+'</span></div><div class="names">';
+        if (n===0){
+          html += '<div class="empty">No one logged</div>';
+        } else {
+          here.forEach(function(r){
+            html += '<div class="worker"><span>'+esc(r.name)+'</span>' +
+                    (r.agency ? '<span class="agency">'+esc(r.agency)+'</span>' : '') + '</div>';
+          });
+        }
+        html += '</div></div>';
+      });
+    });
+
+    // Contractors — grouped by section, only sections with people on site
+    html += '<div class="area-title contractors"><span class="bar"></span>Contractors on site</div>';
+    if (!contractors.length){
+      html += '<div class="slot"><div class="names"><div class="empty">No contractors logged on this shift</div></div></div>';
+    } else {
+      SECTIONS.forEach(function(sec){
+        var here = contractors.filter(function(r){ return r.section === sec; });
+        if (!here.length) return;
+        html += '<div class="slot"><div class="slot-head"><h3>'+esc(sec)+'</h3>' +
+                '<span class="fill ok">'+here.length+' on site</span></div><div class="names">';
+        here.forEach(function(r){
+          html += '<div class="worker"><span>'+esc(r.name)+'</span>' +
+                  (r.agency ? '<span class="agency">'+esc(r.agency)+'</span>' : '') + '</div>';
+        });
+        html += '</div></div>';
+      });
+      // any contractor records with an unrecognised section
+      var other = contractors.filter(function(r){ return SECTIONS.indexOf(r.section) === -1; });
+      if (other.length){
+        html += '<div class="slot"><div class="slot-head"><h3>Other</h3>' +
+                '<span class="fill ok">'+other.length+' on site</span></div><div class="names">';
+        other.forEach(function(r){
+          html += '<div class="worker"><span>'+esc(r.name)+'</span>' +
+                  (r.agency ? '<span class="agency">'+esc(r.agency)+'</span>' : '') + '</div>';
+        });
+        html += '</div></div>';
+      }
+    }
+
+    var total = onShift.length;
+    html = '<p class="count-line">'+total+' worker'+(total===1?'':'s')+' logged on this shift</p>' + html;
+    body.innerHTML = html;
+  }
+
+  /* ---------- records ---------- */
+  function renderRecords(){
+    var fs = $('r-shift').value, fa = $('r-area').value;
+    var list = records.filter(function(r){
+      return (!fs || r.shift===fs) && (!fa || r.area===fa || r.section===fa);
+    });
+    list.sort(function(a,b){ return a.date<b.date?1:(a.date>b.date?-1:0); });
+    $('r-count').textContent = list.length + ' record' + (list.length===1?'':'s');
+
+    var body = $('records-body');
+    if (!list.length){
+      body.innerHTML = '<div class="empty-state"><div class="big">\uD83D\uDCCB</div>' +
+        'No records yet.<br>Log a worker from the first tab and it\u2019ll show up here.</div>';
+      return;
+    }
+    var byDate = {};
+    list.forEach(function(r){ (byDate[r.date] = byDate[r.date] || []).push(r); });
+    var html = '';
+    Object.keys(byDate).sort().reverse().forEach(function(d){
+      html += '<div class="rec-day"><h3>'+fmtDate(d)+'</h3>';
+      byDate[d].forEach(function(r){
+        var isContractor = recType(r) === 'contractor';
+        var rightLabel = isContractor ? 'Contractor' : esc(r.duty);
+        var placeChip = isContractor
+          ? '<span class="chip section">'+esc(r.section)+'</span>'
+          : '<span class="chip '+esc(r.area)+'">'+esc(r.area)+'</span>';
+        html += '<div class="rec"><div class="rec-top"><span class="rec-name">'+esc(r.name)+'</span>' +
+                '<span class="rec-duty">'+rightLabel+'</span></div>' +
+                (r.agency ? '<div class="rec-agency">'+esc(r.agency)+'</div>' : '') +
+                '<div class="rec-chips">' +
+                '<span class="chip '+r.shift+'">'+SHIFT_LABEL[r.shift]+'</span>' +
+                placeChip +
+                (isContractor ? '<span class="chip contractor">Contractor</span>' : '') +
+                '</div>' +
+                (r.notes ? '<div class="rec-notes">'+esc(r.notes)+'</div>' : '') +
+                '<button class="rec-del" data-id="'+r.id+'">Remove record</button></div>';
+      });
+      html += '</div>';
+    });
+    body.innerHTML = html;
+  }
+
+  $('records-body').addEventListener('click', async function(ev){
+    var btn = ev.target.closest('.rec-del'); if(!btn) return;
+    var id = btn.getAttribute('data-id');
+    var idx = records.findIndex(function(r){ return r.id===id; });
+    if (idx < 0) return;
+    if (!confirm('Remove this record? Everyone sharing the log will lose it too.')) return;
+    var removed = records.splice(idx,1)[0];
+    var ok = await saveRecords();
+    if (!ok && !memoryOnly){ records.splice(idx,0,removed); toast('Couldn\u2019t remove — try again'); return; }
+    toast('Record removed');
+    renderRecords();
+  });
+
+  /* ---------- analyse ---------- */
+  function shiftHours(r){
+    // Full-shift assumption: 8 h, except Friday nights which run 22:00 to Saturday 03:00.
+    if (r.shift === 'nights' && dayOfWeek(r.date) === 5) return 5;
+    return 8;
+  }
+  function usageBars(containerId, totals, grandTotal){
+    var box = $(containerId);
+    var keys = Object.keys(totals).sort(function(a,b){ return totals[b].hours - totals[a].hours; });
+    if (!keys.length){
+      box.innerHTML = '<div class="empty">No records in this range.</div>';
+      return;
+    }
+    var max = totals[keys[0]].hours || 1;
+    var html = '';
+    keys.forEach(function(k, i){
+      var t = totals[k];
+      var pct = Math.max(2, Math.round(t.hours / max * 100));
+      var share = grandTotal ? Math.round(t.hours / grandTotal * 100) : 0;
+      html += '<div class="usage-row"><div class="usage-top">' +
+              '<span class="usage-name">'+esc(k)+'</span>' +
+              '<span class="usage-meta">'+t.hours+' h \u00b7 '+t.count+' shift'+(t.count===1?'':'s')+' \u00b7 '+share+'%</span>' +
+              '</div><div class="usage-track">' +
+              '<div class="usage-fill alt'+(i%5)+'" style="width:'+pct+'%"></div></div></div>';
+    });
+    box.innerHTML = html;
+  }
+  function renderAnalyse(){
+    var from = $('a-from').value, to = $('a-to').value;
+    var list = records.filter(function(r){
+      return (!from || r.date >= from) && (!to || r.date <= to);
+    });
+
+    var totalHours = 0, contractorHours = 0;
+    var byCompany = {}, byArea = {}, byDuty = {};
+    var workers = {}, companies = {};
+    list.forEach(function(r){
+      var h = shiftHours(r);
+      totalHours += h;
+      var isContractor = recType(r) === 'contractor';
+      if (isContractor) contractorHours += h;
+      var co = r.agency || 'No company recorded';
+      companies[co] = true;
+      workers[r.name.toLowerCase()] = true;
+      var place = isContractor ? (r.section || 'Contractor — other') : r.area;
+      var role  = isContractor ? 'Contractor' : r.duty;
+      [[byCompany, co],[byArea, place],[byDuty, role]].forEach(function(pair){
+        var m = pair[0], key = pair[1];
+        if (!m[key]) m[key] = {hours:0, count:0};
+        m[key].hours += h; m[key].count += 1;
+      });
+    });
+
+    $('a-stats').innerHTML =
+      '<div class="stat"><div class="num">'+totalHours+'</div><div class="lbl">Hours on site</div></div>' +
+      '<div class="stat"><div class="num">'+contractorHours+'</div><div class="lbl">Contractor hours</div></div>' +
+      '<div class="stat"><div class="num">'+list.length+'</div><div class="lbl">Shifts logged</div></div>' +
+      '<div class="stat"><div class="num">'+Object.keys(companies).length+'</div><div class="lbl">Companies</div></div>';
+
+    usageBars('a-company', byCompany, totalHours);
+    usageBars('a-area', byArea, totalHours);
+    usageBars('a-duty', byDuty, totalHours);
+  }
+
+  function exportCSV(){
+    if (!records.length){ toast('Nothing to export yet'); return; }
+    var head = ['Date','Shift','Type','Area','Duty','Section','Name','Company','Notes','Logged at'];
+    var rows = records.slice().sort(function(a,b){ return a.date<b.date?-1:1; }).map(function(r){
+      return [r.date, SHIFT_LABEL[r.shift], recType(r), r.area, r.duty, r.section, r.name, r.agency, r.notes, r.loggedAt]
+        .map(function(v){ v = String(v==null?'':v); return '"' + v.replace(/"/g,'""') + '"'; }).join(',');
+    });
+    var blob = new Blob([head.join(',')+'\n'+rows.join('\n')], {type:'text/csv'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'crew-log.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  /* ---------- navigation ---------- */
+  var views = {log:'view-log', board:'view-board', records:'view-records', analyse:'view-analyse'};
+  function show(which){
+    Object.keys(views).forEach(function(k){
+      $(views[k]).classList.toggle('active', k===which);
+      $('nav-'+k).classList.toggle('active', k===which);
+    });
+    if (which==='board') renderBoard();
+    if (which==='records') renderRecords();
+    if (which==='analyse') renderAnalyse();
+    window.scrollTo(0,0);
+  }
+  $('nav-log').onclick = function(){ show('log'); };
+  $('nav-board').onclick = function(){ show('board'); };
+  $('nav-records').onclick = function(){ show('records'); };
+  $('nav-analyse').onclick = function(){ show('analyse'); };
+
+  /* ---------- init ---------- */
+  wireSeg('seg-shift','data-shift');
+  wireSeg('seg-area','data-area');
+  wireSeg('seg-duty','data-duty');
+  wireSeg('seg-section','data-section');
+  wireSeg('seg-type','data-type', function(type){
+    var isContractor = type === 'contractor';
+    $('card-area').style.display = isContractor ? 'none' : '';
+    $('card-duty').style.display = isContractor ? 'none' : '';
+    $('card-section').style.display = isContractor ? '' : 'none';
+  });
+  wireSeg('b-seg-shift','data-shift', renderBoard);
+  $('f-date').value = todayISO();
+  $('b-date').value = todayISO();
+  $('f-date').addEventListener('change', updateDateHint);
+  $('b-date').addEventListener('change', renderBoard);
+  $('r-shift').addEventListener('change', renderRecords);
+  $('r-area').addEventListener('change', renderRecords);
+  $('a-from').addEventListener('change', renderAnalyse);
+  $('a-to').addEventListener('change', renderAnalyse);
+  $('btn-save').addEventListener('click', saveEntry);
+  $('btn-export').addEventListener('click', exportCSV);
+  updateDateHint();
+  segSet('b-seg-shift','data-shift','earlies');
+
+  loadRecords().then(function(){
+    if (memoryOnly) toast('No shared database connected yet — records won\u2019t persist');
+  });
+})();
+</script>
+
+</html>
